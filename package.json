@@ -1,0 +1,28 @@
+{
+  "name": "xuetangx-homework-collector",
+  "version": "1.0.0",
+  "description": "Collect visible XuetangX homework question screenshots and answers, then generate a Word document.",
+  "main": "src/collect.js",
+  "scripts": {
+    "collect": "node src/collect.js",
+    "docx": "node src/make-docx.js",
+    "test": "node tests/helpers.test.js",
+    "check": "node --check src/collect.js && node --check src/make-docx.js && node --check src/helpers.js && node --check tests/helpers.test.js"
+  },
+  "keywords": [
+    "xuetangx",
+    "homework",
+    "playwright",
+    "docx"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "docx": "^9.5.1",
+    "playwright": "^1.49.1",
+    "pngjs": "^7.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
