@@ -5,3 +5,5 @@ xuetangx_homework_export/
 .DS_Store
 Thumbs.db
 .env
+exports/
+collector.config.json

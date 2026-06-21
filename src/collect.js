@@ -1,14 +1,10 @@
 /*
-  XuetangX homework image + answer collector.
+  XuetangX homework/test image + answer collector.
 
-  Run:
-    npm install playwright
-    node collect_xuetangx_homework.js
-
-  Question type map:
-    1-60: single choice
-    61-80: multiple choice
-    81-100: judgement
+  Default behavior:
+    - Start from the current visible question.
+    - Collect until the next button is missing/disabled or maxQuestions is reached.
+    - Detect question type from page text when possible.
 */
 
 const fs = require("fs");
@@ -17,17 +13,21 @@ const readline = require("readline");
 const { chromium } = require("playwright");
 const {
   ANSWER_LABEL_PATTERN_SOURCE,
+  DEFAULT_QUESTION_TYPES,
   NOISE_PATTERN_SOURCE,
   QUESTION_TYPE_PATTERN_SOURCE,
+  detectQuestionTypeFromText,
   extractAnswerFromText,
   getQuestionType,
   getQuestionTypeLabel,
 } = require("./helpers");
 
-const CONFIG = {
-  totalQuestions: 100,
+const DEFAULT_CONFIG = {
+  title: "\u5b66\u5802\u5728\u7ebf\u4f5c\u4e1a\u7b54\u6848\u6574\u7406",
   startUrl: "https://www.xuetangx.com/",
   outputDir: path.join(__dirname, "..", "xuetangx_homework_export"),
+  maxQuestions: 200,
+  questionTypes: DEFAULT_QUESTION_TYPES,
 
   // Fill these after using diagnose mode if auto-detection is inaccurate.
   questionAreaSelector: "",
@@ -38,6 +38,22 @@ const CONFIG = {
   browserProfileDir: path.join(__dirname, "..", ".xuetangx-browser-profile"),
   headless: false,
 };
+
+function loadConfig() {
+  const configArg = process.argv.find((arg) => arg.startsWith("--config="));
+  const configPath = configArg ? configArg.slice("--config=".length) : "collector.config.json";
+  const resolvedPath = path.resolve(process.cwd(), configPath);
+  if (!fs.existsSync(resolvedPath)) return { ...DEFAULT_CONFIG };
+  const userConfig = JSON.parse(fs.readFileSync(resolvedPath, "utf8"));
+  return {
+    ...DEFAULT_CONFIG,
+    ...userConfig,
+    outputDir: userConfig.outputDir ? path.resolve(process.cwd(), userConfig.outputDir) : DEFAULT_CONFIG.outputDir,
+    browserProfileDir: userConfig.browserProfileDir ? path.resolve(process.cwd(), userConfig.browserProfileDir) : DEFAULT_CONFIG.browserProfileDir,
+  };
+}
+
+const CONFIG = loadConfig();
 
 const ensureDir = (dir) => fs.mkdirSync(dir, { recursive: true });
 
@@ -118,8 +134,8 @@ async function diagnose(page) {
 
   console.log("\nCandidate question/answer areas:");
   console.table(candidates);
-  console.log("If screenshots are wrong, copy the best selector to CONFIG.questionAreaSelector.");
-  console.log("If answers are wrong, copy the best answer selector to CONFIG.answerSelector.\n");
+  console.log("If screenshots are wrong, copy the best selector to CONFIG.questionAreaSelector or collector.config.json.");
+  console.log("If answers are wrong, copy the best answer selector to CONFIG.answerSelector or collector.config.json.\n");
 }
 
 async function findQuestionArea(page) {
@@ -165,6 +181,14 @@ async function findQuestionArea(page) {
   return visibleLocator(page, selector);
 }
 
+async function detectQuestionType(page, sequence, questionArea) {
+  const areaText = await questionArea.innerText({ timeout: 1000 }).catch(() => "");
+  const bodyText = await page.evaluate(() => document.body.innerText || "").catch(() => "");
+  const detected = detectQuestionTypeFromText(`${areaText}\n${bodyText}`);
+  if (detected !== "unknown") return detected;
+  return getQuestionType(sequence, CONFIG.questionTypes);
+}
+
 async function readAnswer(page, questionType) {
   if (CONFIG.answerSelector) {
     const text = await page.locator(CONFIG.answerSelector).first().innerText({ timeout: 3000 }).catch(() => "");
@@ -175,22 +199,49 @@ async function readAnswer(page, questionType) {
   return extractAnswerFromText(bodyText, questionType);
 }
 
-async function clickNext(page) {
-  const button = page.getByText(CONFIG.nextButtonText, { exact: false }).last();
-  await button.click({ timeout: 5000 });
-  await page.waitForTimeout(CONFIG.delayAfterNextMs);
+async function findNextButton(page) {
+  const candidates = await page.getByText(CONFIG.nextButtonText, { exact: false }).all();
+  for (let i = candidates.length - 1; i >= 0; i -= 1) {
+    const candidate = candidates[i];
+    const visible = await candidate.isVisible().catch(() => false);
+    if (!visible) continue;
+    const disabled = await candidate.evaluate((el) => {
+      return Boolean(el.disabled) ||
+        el.getAttribute("aria-disabled") === "true" ||
+        /disabled|is-disabled/.test(String(el.className || ""));
+    }).catch(() => false);
+    if (!disabled) return candidate;
+  }
+  return null;
 }
 
-async function collectOne(page, index, imagesDir) {
-  const questionType = getQuestionType(index);
-  const padded = String(index).padStart(3, "0");
+async function pageSignature(page) {
+  return page.evaluate(() => {
+    const text = (document.body.innerText || "").replace(/\s+/g, " ").trim();
+    return `${location.href}::${text.slice(0, 600)}`;
+  }).catch(() => page.url());
+}
+
+async function clickNext(page) {
+  const button = await findNextButton(page);
+  if (!button) return false;
+  const before = await pageSignature(page);
+  await button.click({ timeout: 5000 });
+  await page.waitForTimeout(CONFIG.delayAfterNextMs);
+  const after = await pageSignature(page);
+  return before !== after;
+}
+
+async function collectOne(page, sequence, imagesDir) {
+  const padded = String(sequence).padStart(3, "0");
   const imageFile = path.join(imagesDir, `q${padded}.png`);
   const questionArea = await findQuestionArea(page);
   await questionArea.screenshot({ path: imageFile });
+  const questionType = await detectQuestionType(page, sequence, questionArea);
   const answer = await readAnswer(page, questionType);
 
   return {
-    index,
+    index: sequence,
     type: questionType,
     typeLabel: getQuestionTypeLabel(questionType),
     image: imageFile,
@@ -213,32 +264,33 @@ async function main() {
   const page = context.pages()[0] || await context.newPage();
   await page.goto(CONFIG.startUrl, { waitUntil: "domcontentloaded" });
 
-  console.log("Browser opened. Log in to XuetangX and open question 1 on the answer-review page.");
+  console.log("Browser opened. Log in to XuetangX and open the first question on the answer-review page.");
   console.log("Type d then Enter to inspect selectors, or just press Enter to collect.");
   const input = (await ask("> ")).trim().toLowerCase();
 
   if (input === "d") {
     await diagnose(page);
-    await ask("Press Enter to start, or Ctrl+C to edit CONFIG first.");
+    await ask("Press Enter to start, or Ctrl+C to edit CONFIG/config file first.");
   }
 
   const results = [];
-  for (let i = 1; i <= CONFIG.totalQuestions; i += 1) {
-    const type = getQuestionType(i);
-    console.log(`Collecting ${i}/${CONFIG.totalQuestions} (${getQuestionTypeLabel(type)})...`);
+  for (let i = 1; i <= CONFIG.maxQuestions; i += 1) {
+    console.log(`Collecting ${i}/${CONFIG.maxQuestions}...`);
     const item = await collectOne(page, i, imagesDir);
     results.push(item);
-    console.log(`  answer: ${item.answer || "not detected"}`);
+    console.log(`  type: ${item.typeLabel}; answer: ${item.answer || "not detected"}`);
 
-    if (i < CONFIG.totalQuestions) {
-      await clickNext(page);
+    const moved = await clickNext(page);
+    if (!moved) {
+      console.log("No available next question detected; collection stopped.");
+      break;
     }
   }
 
   const dataFile = path.join(CONFIG.outputDir, "data.json");
-  fs.writeFileSync(dataFile, JSON.stringify(results, null, 2), "utf8");
+  fs.writeFileSync(dataFile, JSON.stringify({ title: CONFIG.title, items: results }, null, 2), "utf8");
   console.log(`Collected data: ${dataFile}`);
-  console.log("Next: node make_xuetangx_docx.js");
+  console.log("Next: npm run docx");
 
   await context.close();
 }
@@ -247,4 +299,3 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
-

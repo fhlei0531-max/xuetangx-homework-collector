@@ -1,20 +1,36 @@
-const QUESTION_TYPES = [
+const DEFAULT_QUESTION_TYPES = [
   { from: 1, to: 60, type: "single", label: "\u5355\u9009\u9898" },
   { from: 61, to: 80, type: "multiple", label: "\u591a\u9009\u9898" },
   { from: 81, to: 100, type: "judgement", label: "\u5224\u65ad\u9898" },
 ];
 
+const TYPE_LABELS = {
+  single: "\u5355\u9009\u9898",
+  multiple: "\u591a\u9009\u9898",
+  judgement: "\u5224\u65ad\u9898",
+  unknown: "\u672a\u77e5\u9898\u578b",
+};
+
 const ANSWER_LABEL_PATTERN_SOURCE = "\u6b63\u786e\u7b54\u6848|\u53c2\u8003\u7b54\u6848|\u6807\u51c6\u7b54\u6848|\u7b54\u6848";
 const QUESTION_TYPE_PATTERN_SOURCE = "\u5355\u9009\u9898|\u591a\u9009\u9898|\u5224\u65ad\u9898|\u586b\u7a7a\u9898|\u7b80\u7b54\u9898";
 const NOISE_PATTERN_SOURCE = "\u6b64\u4f5c\u4e1a\u8bf7\u5728|\u8fdb\u5ea6\uff1a|\u7b54\u9898\u5361";
 
-function getQuestionType(index) {
-  const found = QUESTION_TYPES.find((item) => index >= item.from && index <= item.to);
+function detectQuestionTypeFromText(text) {
+  const source = String(text || "");
+  if (/\u591a\u9009\u9898/.test(source)) return "multiple";
+  if (/\u5355\u9009\u9898/.test(source)) return "single";
+  if (/\u5224\u65ad\u9898/.test(source)) return "judgement";
+  return "unknown";
+}
+
+function getQuestionType(index, questionTypes) {
+  const ranges = Array.isArray(questionTypes) ? questionTypes : DEFAULT_QUESTION_TYPES;
+  const found = ranges.find((item) => index >= item.from && index <= item.to);
   return found ? found.type : "unknown";
 }
 
 function getQuestionTypeLabel(type) {
-  return QUESTION_TYPES.find((item) => item.type === type)?.label || "\u672a\u77e5\u9898\u578b";
+  return TYPE_LABELS[type] || TYPE_LABELS.unknown;
 }
 
 function normalizeAnswer(answer, questionType) {
@@ -78,8 +94,10 @@ function extractAnswerFromText(text, questionType) {
 
 module.exports = {
   ANSWER_LABEL_PATTERN_SOURCE,
+  DEFAULT_QUESTION_TYPES,
   NOISE_PATTERN_SOURCE,
   QUESTION_TYPE_PATTERN_SOURCE,
+  detectQuestionTypeFromText,
   extractAnswerFromText,
   getQuestionType,
   getQuestionTypeLabel,

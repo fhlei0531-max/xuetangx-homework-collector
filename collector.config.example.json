@@ -1,0 +1,12 @@
+﻿{
+  "title": "第 1 章测试答案整理",
+  "outputDir": "exports/chapter-01",
+  "maxQuestions": 30,
+  "questionTypes": [
+    { "from": 1, "to": 3, "type": "single" },
+    { "from": 4, "to": 5, "type": "judgement" }
+  ],
+  "questionAreaSelector": "",
+  "answerSelector": "",
+  "nextButtonText": "下一题"
+}

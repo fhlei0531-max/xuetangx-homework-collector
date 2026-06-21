@@ -38,7 +38,7 @@ function imageType(imagePath) {
   return "png";
 }
 
-function buildDocument(items) {
+function buildDocument(items, title) {
   const children = [
     new Paragraph({
       text: "\u5b66\u5802\u5728\u7ebf\u4f5c\u4e1a\u7b54\u6848\u6574\u7406",
@@ -110,8 +110,10 @@ async function main() {
     throw new Error(`Missing ${dataFile}. Run collect_xuetangx_homework.js first.`);
   }
 
-  const items = JSON.parse(fs.readFileSync(dataFile, "utf8"));
-  const doc = buildDocument(items);
+  const data = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+  const items = Array.isArray(data) ? data : data.items;
+  const title = Array.isArray(data) ? undefined : data.title;
+  const doc = buildDocument(items, title);
   const buffer = await Packer.toBuffer(doc);
   fs.writeFileSync(CONFIG.outputDocx, buffer);
   console.log(`Word generated: ${CONFIG.outputDocx}`);
@@ -121,6 +123,7 @@ main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+
 
 
 
