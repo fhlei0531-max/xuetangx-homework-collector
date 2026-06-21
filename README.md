@@ -221,23 +221,6 @@ exports/
 collector.config.json
 ```
 
-## 上传到 GitHub
-
-初始化仓库：
-
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-```
-
-在 GitHub 创建一个空仓库后，按页面提示添加远程地址，例如：
-
-```bash
-git remote add origin https://github.com/your-name/xuetangx-homework-collector.git
-git branch -M main
-git push -u origin main
-```
 
 ## 合规说明
 
